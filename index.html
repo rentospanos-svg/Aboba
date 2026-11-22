@@ -6,6 +6,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#161618">
 <title>Смотрим вместе</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
 :root{--bg:#161618;--card:#222225;--text:#efeae0;--muted:#9b968b;--line:#3a352b;--gold:linear-gradient(135deg,#f8de7e 0%,#d9a520 50%,#a8780f 100%);--gold1:#e2b43a}
 *{box-sizing:border-box}
@@ -40,6 +42,8 @@ button,.btn{display:inline-block;padding:11px 14px;border-radius:12px;border:0;b
 .m.them{align-self:flex-start;background:var(--card);border:1px solid var(--line)}
 #srcCard{flex:0 0 auto}
 #srcCard .btn,#srcCard button{flex:1;padding:10px 8px;font-size:14px}
+#bottom{overflow-y:auto}
+#chatCard{min-height:170px}
 </style>
 </head>
 <body>
@@ -52,6 +56,7 @@ button,.btn{display:inline-block;padding:11px 14px;border-radius:12px;border:0;b
       <button id="joinBtn">Войти</button>
     </div>
     <p class="hint" id="joinStatus"></p>
+    <button id="newBtn" style="width:100%;margin-top:10px">✨ Создать комнату и пригласить</button>
     <p class="hint">Два режима: обычный (оба выбираете один и тот же файл, синхронизируются пауза и перемотка) и трансляция (файл выбирает один, второй видит видео сам; транслировать можно с Android или компьютера в Chrome).</p>
   </div>
 </div>
@@ -73,6 +78,7 @@ button,.btn{display:inline-block;padding:11px 14px;border-radius:12px;border:0;b
         <input type="file" id="file" accept="video/*" class="hide">
       </label>
       <button id="bcBtn">📡 Транслировать</button>
+      <button id="invBtn">🔗 Позвать</button>
     </div>
   </div>
 </div>
@@ -278,6 +284,23 @@ var SUPABASE_KEY = "sb_publishable_HGES6X4jf-AKmT8vhlAxnA_mKd_gthb";
 
     setInterval(function(){ if(lastActor && !v.paused) sendState(); }, 4000);
   });
+  $("invBtn").addEventListener("click", function(){
+    var code = $("code").value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    var url = location.origin + location.pathname + "#" + code;
+    if(navigator.share){
+      navigator.share({title:"Смотрим вместе", text:"Заходи ко мне в комнату:", url:url}).catch(function(){});
+    } else if(navigator.clipboard){
+      navigator.clipboard.writeText(url).then(function(){ say("Ссылка скопирована, отправьте её: " + url); }).catch(function(){ say(url); });
+    } else { say(url); }
+  });
+  $("newBtn").addEventListener("click", function(){
+    $("code").value = "kino" + Math.random().toString(36).slice(2, 10);
+    $("joinBtn").click();
+    setTimeout(function(){ say("Комната создана. Нажмите «Позвать» и отправьте ссылку."); }, 1500);
+  });
+  if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(function(){}); }
+  var h = location.hash.replace("#", "");
+  if(h){ $("code").value = h; $("joinBtn").click(); }
 })();
 </script>
 </body>

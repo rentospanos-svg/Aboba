@@ -2,71 +2,80 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#161618">
 <title>Смотрим вместе</title>
 <style>
-:root{--bg:#fff7f9;--card:#fff;--text:#2a1f25;--muted:#7b6a72;--accent:#e0457b;--line:#f0d9e1}
-@media (prefers-color-scheme:dark){:root{--bg:#17111a;--card:#231a28;--text:#f4e9ef;--muted:#a995a1;--accent:#ff6b9d;--line:#3a2b40;color-scheme:dark}}
+:root{--bg:#161618;--card:#222225;--text:#efeae0;--muted:#9b968b;--line:#3a352b;--gold:linear-gradient(135deg,#f8de7e 0%,#d9a520 50%,#a8780f 100%);--gold1:#e2b43a}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
-main{max-width:720px;margin:0 auto;padding:16px}
-h1{font-size:22px;margin:4px 0 12px}
+html,body{height:100%;margin:0}
+body{display:flex;flex-direction:column;overflow:hidden;background:var(--bg);color:var(--text);font:16px/1.4 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;padding-top:env(safe-area-inset-top,0);padding-bottom:env(safe-area-inset-bottom,0)}
+.hide{display:none!important}
+h1{font-size:24px;margin:8px 0 14px;background:var(--gold);-webkit-background-clip:text;background-clip:text;color:transparent}
+#joinView{flex:1;overflow:auto;padding:16px;max-width:720px;width:100%;margin:0 auto}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
 label.l{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
-input[type=text]{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:16px}
-button,.btn{display:inline-block;padding:12px 16px;border-radius:12px;border:0;background:var(--accent);color:#fff;font-size:16px;font-weight:600;cursor:pointer}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.row input[type=text]{flex:1;min-width:140px}
-video{width:100%;max-height:60vh;background:#000;border-radius:12px;display:block}
-.status{font-size:14px;color:var(--muted);margin:8px 0 0}
-.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#bbb;margin-right:6px}
-.dot.on{background:#2ecc71}
-.hide{display:none}
-.chat{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;margin-bottom:10px}
+input[type=text]{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:#121214;color:var(--text);font-size:16px}
+input[type=text]:focus{outline:none;border-color:var(--gold1)}
+button,.btn{display:inline-block;padding:11px 14px;border-radius:12px;border:0;background:var(--gold);color:#1b1405;font-size:15px;font-weight:700;cursor:pointer;text-align:center}
+.btn.ghost{background:transparent;color:var(--gold1);border:1px solid var(--gold1)}
+.row{display:flex;gap:8px;align-items:center}
+.row input[type=text]{flex:1;min-width:0}
+.hint{font-size:13px;color:var(--muted);margin:8px 0 0}
+#app{display:none;flex-direction:column;flex:1;min-height:0;width:100%;max-width:720px;margin:0 auto}
+#app.on{display:flex}
+#player{flex:0 0 28.5vh;flex-basis:28.5svh;background:#000;border-bottom:2px solid var(--gold1)}
+#player video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
+#bottom{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;padding:8px 12px 10px}
+.bar{display:flex;align-items:center;font-size:14px;color:var(--muted)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#666;margin-right:6px}
+.dot.on{background:#e2b43a;box-shadow:0 0 8px #e2b43a}
+#msg{font-size:13px;color:var(--muted);margin:0}
+#msg:empty{display:none}
+#chatCard{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px}
+.chat{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding:4px 2px}
 .m{max-width:80%;padding:8px 12px;border-radius:14px;overflow-wrap:anywhere;font-size:15px}
-.m.me{align-self:flex-end;background:var(--accent);color:#fff}
-.m.them{align-self:flex-start;background:var(--bg);border:1px solid var(--line)}
+.m.me{align-self:flex-end;background:var(--gold);color:#1b1405}
+.m.them{align-self:flex-start;background:var(--card);border:1px solid var(--line)}
+#srcCard{flex:0 0 auto}
+#srcCard .btn,#srcCard button{flex:1;padding:10px 8px;font-size:14px}
 </style>
 </head>
 <body>
-<main>
-  <h1>Смотрим вместе 💞</h1>
-
+<div id="joinView">
+  <h1>Смотрим вместе</h1>
   <div class="card" id="joinCard">
     <label class="l" for="code">Код комнаты: придумайте длинный и одинаковый у обоих (латиница и цифры)</label>
     <div class="row">
       <input type="text" id="code" maxlength="30" autocapitalize="off" autocomplete="off" placeholder="например: kino8472xz">
       <button id="joinBtn">Войти</button>
     </div>
-    <p class="status" id="joinStatus"></p>
+    <p class="hint" id="joinStatus"></p>
+    <p class="hint">Два режима: обычный (оба выбираете один и тот же файл, синхронизируются пауза и перемотка) и трансляция (файл выбирает один, второй видит видео сам; транслировать можно с Android или компьютера в Chrome).</p>
   </div>
+</div>
 
-  <div class="card hide" id="roomCard">
-    <p class="status" style="margin:0 0 8px"><span class="dot" id="dot"></span><span id="peersText">Подключаемся…</span></p>
-    <video id="v" controls playsinline preload="auto"></video>
-    <p class="status" id="msg"></p>
-  </div>
-
-  <div class="card hide" id="srcCard">
-    <label class="btn" style="margin:0">Выбрать видеофайл
-      <input type="file" id="file" accept="video/*" class="hide">
-    </label>
-    <p class="status">Обычный режим: оба выбираете один и тот же файл. Синхронизируются пауза, play и перемотка.</p>
-    <div class="row" style="margin-top:10px">
-      <button id="bcBtn">📡 Транслировать этот файл</button>
+<div id="app">
+  <div id="roomCard"><div id="player"><video id="v" controls playsinline preload="auto"></video></div></div>
+  <div id="bottom">
+    <div class="bar"><span class="dot" id="dot"></span><span id="peersText">Подключаемся…</span></div>
+    <p id="msg"></p>
+    <div id="chatCard">
+      <div class="chat" id="chat"></div>
+      <div class="row">
+        <input type="text" id="chatIn" maxlength="500" placeholder="Написать сообщение…" autocomplete="off">
+        <button id="chatBtn">Отправить</button>
+      </div>
     </div>
-    <p class="status">Режим трансляции: выберите файл только у себя и нажмите кнопку. Второй увидит видео сам, ему ничего выбирать не нужно. Работает при трансляции с Android или компьютера в Chrome.</p>
-  </div>
-
-  <div class="card hide" id="chatCard">
-    <div class="chat" id="chat"></div>
-    <div class="row">
-      <input type="text" id="chatIn" maxlength="500" placeholder="Написать сообщение…" autocomplete="off">
-      <button id="chatBtn">Отправить</button>
+    <div class="row" id="srcCard">
+      <label class="btn ghost">Выбрать видеофайл
+        <input type="file" id="file" accept="video/*" class="hide">
+      </label>
+      <button id="bcBtn">📡 Транслировать</button>
     </div>
   </div>
-</main>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
 <script>
@@ -168,7 +177,7 @@ var SUPABASE_KEY = "sb_publishable_HGES6X4jf-AKmT8vhlAxnA_mKd_gthb";
     mode = "sync";
     closeBroadcast();
     send("bcast", {on:false, from:myId});
-    $("bcBtn").textContent = "📡 Транслировать этот файл";
+    $("bcBtn").textContent = "📡 Транслировать";
     say("Трансляция остановлена.");
   }
   $("bcBtn").addEventListener("click", function(){
@@ -246,8 +255,8 @@ var SUPABASE_KEY = "sb_publishable_HGES6X4jf-AKmT8vhlAxnA_mKd_gthb";
     ch.on("broadcast", {event:"ice"}, function(m){ onIce(m.payload); });
 
     $("joinStatus").textContent = "Входим…";
-    $("joinCard").classList.add("hide");
-    ["roomCard","srcCard","chatCard"].forEach(function(id){ $(id).classList.remove("hide"); });
+    $("joinView").classList.add("hide");
+    $("app").classList.add("on");
 
     var to = setTimeout(function(){
       if(!subscribed){

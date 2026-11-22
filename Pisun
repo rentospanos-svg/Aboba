@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Смотрим вместе</title>
+<style>
+:root{--bg:#fff7f9;--card:#fff;--text:#2a1f25;--muted:#7b6a72;--accent:#e0457b;--line:#f0d9e1}
+@media (prefers-color-scheme:dark){:root{--bg:#17111a;--card:#231a28;--text:#f4e9ef;--muted:#a995a1;--accent:#ff6b9d;--line:#3a2b40;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+main{max-width:720px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+label.l{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+input[type=text]{width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:16px}
+button,.btn{display:inline-block;padding:12px 16px;border-radius:12px;border:0;background:var(--accent);color:#fff;font-size:16px;font-weight:600;cursor:pointer}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row input[type=text]{flex:1;min-width:140px}
+video{width:100%;max-height:60vh;background:#000;border-radius:12px;display:block}
+.status{font-size:14px;color:var(--muted);margin:8px 0 0}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#bbb;margin-right:6px}
+.dot.on{background:#2ecc71}
+.hide{display:none}
+.chat{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;margin-bottom:10px}
+.m{max-width:80%;padding:8px 12px;border-radius:14px;overflow-wrap:anywhere;font-size:15px}
+.m.me{align-self:flex-end;background:var(--accent);color:#fff}
+.m.them{align-self:flex-start;background:var(--bg);border:1px solid var(--line)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Смотрим вместе 💞</h1>
+
+  <div class="card" id="joinCard">
+    <label class="l" for="code">Код комнаты: придумайте длинный и одинаковый у обоих (латиница и цифры)</label>
+    <div class="row">
+      <input type="text" id="code" maxlength="30" autocapitalize="off" autocomplete="off" placeholder="например: kino8472xz">
+      <button id="joinBtn">Войти</button>
+    </div>
+    <p class="status" id="joinStatus"></p>
+  </div>
+
+  <div class="card hide" id="roomCard">
+    <p class="status" style="margin:0 0 8px"><span class="dot" id="dot"></span><span id="peersText">Подключаемся…</span></p>
+    <video id="v" controls playsinline preload="auto"></video>
+    <p class="status" id="msg"></p>
+  </div>
+
+  <div class="card hide" id="srcCard">
+    <label class="btn" style="margin:0">Выбрать видеофайл
+      <input type="file" id="file" accept="video/*" class="hide">
+    </label>
+    <p class="status">Обычный режим: оба выбираете один и тот же файл. Синхронизируются пауза, play и перемотка.</p>
+    <div class="row" style="margin-top:10px">
+      <button id="bcBtn">📡 Транслировать этот файл</button>
+    </div>
+    <p class="status">Режим трансляции: выберите файл только у себя и нажмите кнопку. Второй увидит видео сам, ему ничего выбирать не нужно. Работает при трансляции с Android или компьютера в Chrome.</p>
+  </div>
+
+  <div class="card hide" id="chatCard">
+    <div class="chat" id="chat"></div>
+    <div class="row">
+      <input type="text" id="chatIn" maxlength="500" placeholder="Написать сообщение…" autocomplete="off">
+      <button id="chatBtn">Отправить</button>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
+<script>
+var SUPABASE_URL = "https://tsmzrkexzrjffpcwmwpj.supabase.co";
+var SUPABASE_KEY = "sb_publishable_HGES6X4jf-AKmT8vhlAxnA_mKd_gthb";
+
+(function(){
+  var $ = function(id){return document.getElementById(id)};
+  var v = $("v"), ch = null, subscribed = false, applying = false, lastActor = false, objUrl = null;
+  var myId = Math.random().toString(36).slice(2);
+  var mode = "sync"; // sync | broadcast | viewer
+  var pcs = {}, viewerPc = null;
+  var ICE = {iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}]};
+
+  function say(t){ $("msg").textContent = t || ""; }
+  function send(event, payload){
+    if(ch && subscribed){ ch.send({type:"broadcast", event:event, payload:payload}); }
+  }
+  function sendState(){ send("state", {playing:!v.paused, t:v.currentTime}); }
+
+  function user(fn){ return function(){ if(applying || mode === "viewer") return; lastActor = true; fn(); }; }
+  v.addEventListener("play", user(sendState));
+  v.addEventListener("pause", user(sendState));
+  v.addEventListener("seeked", user(sendState));
+
+  function applyState(s){
+    if(mode === "viewer" || !s || typeof s.t !== "number") return;
+    applying = true; lastActor = false;
+    if(Math.abs(v.currentTime - s.t) > 0.8){ v.currentTime = s.t; }
+    var p = null;
+    if(s.playing && v.paused){ p = v.play(); }
+    else if(!s.playing && !v.paused){ v.pause(); }
+    if(p && p.catch){ p.catch(function(){ say("Нажми play: браузер не даёт запускать видео сам."); }); }
+    setTimeout(function(){ applying = false; }, 400);
+  }
+
+  $("file").addEventListener("change", function(e){
+    var f = e.target.files && e.target.files[0];
+    if(!f || mode === "viewer") return;
+    if(objUrl) URL.revokeObjectURL(objUrl);
+    objUrl = URL.createObjectURL(f);
+    applying = true; v.src = objUrl; v.load();
+    setTimeout(function(){ applying = false; }, 400);
+    say("Файл: " + f.name + ". Второй должен выбрать такой же.");
+  });
+
+  function addMsg(text, mine){
+    var box = $("chat"), el = document.createElement("div");
+    el.className = "m " + (mine ? "me" : "them");
+    el.textContent = text;
+    box.appendChild(el);
+    box.scrollTop = box.scrollHeight;
+  }
+  function sendChat(){
+    var inp = $("chatIn"), t = inp.value.trim();
+    if(!t) return;
+    if(!subscribed){ say("Нет связи с комнатой, сообщение не отправлено."); return; }
+    send("chat", {text:t});
+    addMsg(t, true);
+    inp.value = "";
+  }
+  $("chatBtn").addEventListener("click", sendChat);
+  $("chatIn").addEventListener("keydown", function(e){ if(e.key === "Enter"){ e.preventDefault(); sendChat(); } });
+
+  function addIce(pc, c){
+    if(!pc || !c) return;
+    if(pc.remoteDescription){ pc.addIceCandidate(c).catch(function(){}); }
+    else { (pc._q = pc._q || []).push(c); }
+  }
+  function flushIce(pc){
+    (pc._q || []).forEach(function(c){ pc.addIceCandidate(c).catch(function(){}); });
+    pc._q = [];
+  }
+  function makeOffer(viewerId){
+    if(pcs[viewerId]){ try{ pcs[viewerId].close(); }catch(e){} }
+    var pc = new RTCPeerConnection(ICE);
+    pcs[viewerId] = pc;
+    var stream = v.captureStream ? v.captureStream() : null;
+    if(!stream){ return; }
+    stream.getTracks().forEach(function(t){ pc.addTrack(t, stream); });
+    pc.onicecandidate = function(e){ if(e.candidate) send("ice", {to:viewerId, from:myId, c:e.candidate}); };
+    pc.createOffer().then(function(o){ return pc.setLocalDescription(o); }).then(function(){
+      send("offer", {to:viewerId, from:myId, sdp:pc.localDescription});
+    }).catch(function(){ say("Не удалось начать трансляцию."); });
+  }
+  function closeBroadcast(){
+    Object.keys(pcs).forEach(function(k){ try{ pcs[k].close(); }catch(e){} });
+    pcs = {};
+  }
+  function startBroadcast(){
+    if(!v.getAttribute("src")){ say("Сначала выберите видеофайл."); return; }
+    if(!v.captureStream){ say("Этот браузер не умеет транслировать. Откройте сайт в Chrome на Android или на компьютере."); return; }
+    mode = "broadcast";
+    $("bcBtn").textContent = "Остановить трансляцию";
+    say("Трансляция идёт. Меняйте паузу и перемотку у себя, второй увидит это сразу.");
+    send("bcast", {on:true, from:myId});
+  }
+  function stopBroadcast(){
+    mode = "sync";
+    closeBroadcast();
+    send("bcast", {on:false, from:myId});
+    $("bcBtn").textContent = "📡 Транслировать этот файл";
+    say("Трансляция остановлена.");
+  }
+  $("bcBtn").addEventListener("click", function(){
+    if(mode === "broadcast") stopBroadcast(); else if(mode === "sync") startBroadcast();
+  });
+  function onBcast(d){
+    if(!d || d.from === myId) return;
+    if(d.on){
+      if(mode === "broadcast") return;
+      mode = "viewer";
+      $("srcCard").classList.add("hide");
+      say("Идёт трансляция от партнёра…");
+      send("want", {id:myId});
+    } else if(mode === "viewer"){
+      mode = "sync";
+      if(viewerPc){ try{ viewerPc.close(); }catch(e){} viewerPc = null; }
+      v.srcObject = null;
+      $("srcCard").classList.remove("hide");
+      say("Трансляция остановлена.");
+    }
+  }
+  function onOffer(d){
+    if(mode !== "viewer" || !d || d.to !== myId) return;
+    if(viewerPc){ try{ viewerPc.close(); }catch(e){} }
+    var pc = new RTCPeerConnection(ICE);
+    viewerPc = pc;
+    pc.ontrack = function(e){
+      v.srcObject = e.streams[0];
+      var pr = v.play();
+      if(pr && pr.catch){ pr.catch(function(){ say("Нажми play, чтобы начать смотреть."); }); }
+      say("");
+    };
+    pc.onicecandidate = function(e){ if(e.candidate) send("ice", {to:d.from, from:myId, c:e.candidate}); };
+    pc.setRemoteDescription(d.sdp).then(function(){ flushIce(pc); return pc.createAnswer(); })
+      .then(function(a){ return pc.setLocalDescription(a); })
+      .then(function(){ send("answer", {to:d.from, from:myId, sdp:pc.localDescription}); })
+      .catch(function(){ say("Не удалось подключиться к трансляции."); });
+  }
+  function onAnswer(d){
+    if(mode !== "broadcast" || !d || d.to !== myId) return;
+    var pc = pcs[d.from];
+    if(!pc) return;
+    pc.setRemoteDescription(d.sdp).then(function(){ flushIce(pc); }).catch(function(){});
+  }
+  function onIce(d){
+    if(!d || d.to !== myId) return;
+    addIce(mode === "broadcast" ? pcs[d.from] : viewerPc, d.c);
+  }
+
+  function setPeers(n){
+    $("dot").className = "dot" + (n > 1 ? " on" : "");
+    $("peersText").textContent = n > 1 ? "Вы вместе в комнате" : "Ждём второго…";
+  }
+
+  $("joinBtn").addEventListener("click", function(){
+    var code = $("code").value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    if(code.length < 4){ $("joinStatus").textContent = "Код минимум 4 символа, латиница и цифры."; return; }
+    if(!window.supabase){ $("joinStatus").textContent = "Не загрузилась библиотека. Проверьте интернет и обновите страницу."; return; }
+
+    var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    ch = sb.channel("wt-" + code, {config:{broadcast:{self:false}, presence:{key:myId}}});
+
+    ch.on("broadcast", {event:"state"}, function(m){ applyState(m.payload); });
+    ch.on("broadcast", {event:"chat"}, function(m){
+      if(m.payload && typeof m.payload.text === "string") addMsg(m.payload.text.slice(0,500), false);
+    });
+    ch.on("presence", {event:"sync"}, function(){ setPeers(Object.keys(ch.presenceState()).length); });
+    ch.on("presence", {event:"join"}, function(){
+      if(mode === "broadcast"){ send("bcast", {on:true, from:myId}); } else { sendState(); }
+    });
+    ch.on("broadcast", {event:"bcast"}, function(m){ onBcast(m.payload); });
+    ch.on("broadcast", {event:"want"}, function(m){ if(mode === "broadcast" && m.payload) makeOffer(m.payload.id); });
+    ch.on("broadcast", {event:"offer"}, function(m){ onOffer(m.payload); });
+    ch.on("broadcast", {event:"answer"}, function(m){ onAnswer(m.payload); });
+    ch.on("broadcast", {event:"ice"}, function(m){ onIce(m.payload); });
+
+    $("joinStatus").textContent = "Входим…";
+    $("joinCard").classList.add("hide");
+    ["roomCard","srcCard","chatCard"].forEach(function(id){ $(id).classList.remove("hide"); });
+
+    var to = setTimeout(function(){
+      if(!subscribed){
+        $("peersText").textContent = "Не удаётся соединиться";
+        say("Проверьте интернет и данные Supabase в index.html, потом обновите страницу.");
+      }
+    }, 15000);
+
+    ch.subscribe(function(status){
+      if(status === "SUBSCRIBED"){
+        subscribed = true; clearTimeout(to); say("");
+        ch.track({at:Date.now()});
+        setPeers(1);
+      } else if(status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED"){
+        subscribed = false;
+        $("peersText").textContent = "Связь потеряна, обновите страницу";
+      }
+    });
+
+    setInterval(function(){ if(lastActor && !v.paused) sendState(); }, 4000);
+  });
+})();
+</script>
+</body>
+</html>

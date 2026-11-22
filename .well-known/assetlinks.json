@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "io.github.rentospanos_svg.twa",
+    "sha256_cert_fingerprints": ["E9:8F:C1:FA:BC:05:10:65:A4:60:F2:7C:2C:35:8F:78:DE:6C:0D:D3:25:84:13:53:20:2A:22:24:0F:41:F3:FF"]
+  }
+}]

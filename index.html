@@ -27,8 +27,9 @@ button,.btn{display:inline-block;padding:11px 14px;border-radius:12px;border:0;b
 .hint{font-size:13px;color:var(--muted);margin:8px 0 0}
 #app{display:none;flex-direction:column;flex:1;min-height:0;width:100%;max-width:720px;margin:0 auto}
 #app.on{display:flex}
-#player{flex:0 0 28.5vh;flex-basis:28.5svh;background:#000;border-bottom:2px solid var(--gold1)}
-#player video{width:100%;height:100%;object-fit:contain;display:block;background:#000}
+#player{flex:0 0 auto;height:clamp(170px,28.5vh,270px);height:clamp(170px,28.5svh,270px);min-height:0;overflow:hidden;position:relative;background:#000;border-bottom:2px solid var(--gold1)}
+#player video,#ytwrap{position:absolute;top:0;left:0;width:100%;height:100%;background:#000}
+#player video{object-fit:contain}
 #bottom{flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;padding:8px 12px 10px}
 .bar{display:flex;align-items:center;font-size:14px;color:var(--muted)}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#666;margin-right:6px}
@@ -44,6 +45,7 @@ button,.btn{display:inline-block;padding:11px 14px;border-radius:12px;border:0;b
 #srcCard .btn,#srcCard button{flex:1;padding:10px 8px;font-size:14px}
 #bottom{overflow-y:auto}
 #chatCard{min-height:170px}
+#ytwrap iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:0}
 </style>
 </head>
 <body>
@@ -57,12 +59,12 @@ button,.btn{display:inline-block;padding:11px 14px;border-radius:12px;border:0;b
     </div>
     <p class="hint" id="joinStatus"></p>
     <button id="newBtn" style="width:100%;margin-top:10px">✨ Создать комнату и пригласить</button>
-    <p class="hint">Два режима: обычный (оба выбираете один и тот же файл, синхронизируются пауза и перемотка) и трансляция (файл выбирает один, второй видит видео сам; транслировать можно с Android или компьютера в Chrome).</p>
+    <p class="hint">Три режима: YouTube (вставьте ссылку, видео откроется у обоих), обычный (оба выбираете один и тот же файл) и трансляция (файл выбирает один, второй видит видео сам; транслировать можно с Android или компьютера в Chrome).</p>
   </div>
 </div>
 
 <div id="app">
-  <div id="roomCard"><div id="player"><video id="v" controls playsinline preload="auto"></video></div></div>
+  <div id="roomCard"><div id="player"><video id="v" controls playsinline preload="auto"></video><div id="ytwrap" class="hide"></div></div></div>
   <div id="bottom">
     <div class="bar"><span class="dot" id="dot"></span><span id="peersText">Подключаемся…</span></div>
     <p id="msg"></p>
@@ -72,6 +74,10 @@ button,.btn{display:inline-block;padding:11px 14px;border-radius:12px;border:0;b
         <input type="text" id="chatIn" maxlength="500" placeholder="Написать сообщение…" autocomplete="off">
         <button id="chatBtn">Отправить</button>
       </div>
+    </div>
+    <div class="row" id="ytRow">
+      <input type="text" id="ytIn" placeholder="Ссылка на YouTube…" autocomplete="off" autocapitalize="off">
+      <button id="ytBtn" style="flex:0 0 auto">▶ YouTube</button>
     </div>
     <div class="row" id="srcCard">
       <label class="btn ghost">Выбрать видеофайл
@@ -92,8 +98,9 @@ var SUPABASE_KEY = "sb_publishable_HGES6X4jf-AKmT8vhlAxnA_mKd_gthb";
   var $ = function(id){return document.getElementById(id)};
   var v = $("v"), ch = null, subscribed = false, applying = false, lastActor = false, objUrl = null;
   var myId = Math.random().toString(36).slice(2);
-  var mode = "sync"; // sync | broadcast | viewer
+  var mode = "sync"; // sync | broadcast | viewer | yt
   var pcs = {}, viewerPc = null;
+  var ytPlayer = null, ytReady = false, ytId = null, ytApplying = false, ytLast = {t:0, at:0, playing:false}, ytTimer = null;
   var ICE = {iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}]};
 
   function say(t){ $("msg").textContent = t || ""; }
@@ -108,7 +115,7 @@ var SUPABASE_KEY = "sb_publishable_HGES6X4jf-AKmT8vhlAxnA_mKd_gthb";
   v.addEventListener("seeked", user(sendState));
 
   function applyState(s){
-    if(mode === "viewer" || !s || typeof s.t !== "number") return;
+    if(mode === "viewer" || mode === "yt" || !s || typeof s.t !== "number") return;
     applying = true; lastActor = false;
     if(Math.abs(v.currentTime - s.t) > 0.8){ v.currentTime = s.t; }
     var p = null;
@@ -121,6 +128,7 @@ var SUPABASE_KEY = "sb_publishable_HGES6X4jf-AKmT8vhlAxnA_mKd_gthb";
   $("file").addEventListener("change", function(e){
     var f = e.target.files && e.target.files[0];
     if(!f || mode === "viewer") return;
+    if(mode === "yt") leaveYt(true);
     if(objUrl) URL.revokeObjectURL(objUrl);
     objUrl = URL.createObjectURL(f);
     applying = true; v.src = objUrl; v.load();
@@ -187,12 +195,14 @@ var SUPABASE_KEY = "sb_publishable_HGES6X4jf-AKmT8vhlAxnA_mKd_gthb";
     say("Трансляция остановлена.");
   }
   $("bcBtn").addEventListener("click", function(){
+    if(mode === "yt") leaveYt(true);
     if(mode === "broadcast") stopBroadcast(); else if(mode === "sync") startBroadcast();
   });
   function onBcast(d){
     if(!d || d.from === myId) return;
     if(d.on){
       if(mode === "broadcast") return;
+      if(mode === "yt") leaveYt(false);
       mode = "viewer";
       $("srcCard").classList.add("hide");
       say("Идёт трансляция от партнёра…");
@@ -233,6 +243,114 @@ var SUPABASE_KEY = "sb_publishable_HGES6X4jf-AKmT8vhlAxnA_mKd_gthb";
     addIce(mode === "broadcast" ? pcs[d.from] : viewerPc, d.c);
   }
 
+  function loadYT(cb){
+    if(window.YT && YT.Player){ cb(); return; }
+    var prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = function(){ if(prev) prev(); cb(); };
+    if(!document.getElementById("ytapi")){
+      var sc = document.createElement("script");
+      sc.id = "ytapi"; sc.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(sc);
+    }
+  }
+  function ytParse(u){
+    var m = String(u).match(/(?:youtu\.be\/|v=|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
+    return m ? m[1] : null;
+  }
+  function onYtState(e){
+    if(ytApplying) return;
+    if(e.data === 1 || e.data === 2){
+      var t = ytPlayer.getCurrentTime();
+      ytLast = {t:t, at:Date.now(), playing:e.data === 1};
+      send("ytstate", {playing:e.data === 1, t:t});
+    }
+  }
+  function startYtPoll(){
+    clearInterval(ytTimer);
+    ytTimer = setInterval(function(){
+      if(!ytPlayer || !ytReady || ytApplying) return;
+      var cur = ytPlayer.getCurrentTime(), st = ytPlayer.getPlayerState(), now = Date.now();
+      var expected = ytLast.t + (ytLast.playing ? (now - ytLast.at) / 1000 : 0);
+      if(Math.abs(cur - expected) > 1.5 && (st === 1 || st === 2 || st === 3)){
+        send("ytstate", {playing:st === 1, t:cur});
+      }
+      ytLast = {t:cur, at:now, playing:st === 1};
+    }, 500);
+  }
+  function enterYt(id, t, playing){
+    if(mode === "broadcast"){ closeBroadcast(); $("bcBtn").textContent = "📡 Транслировать"; }
+    if(mode === "viewer"){
+      if(viewerPc){ try{ viewerPc.close(); }catch(e){} viewerPc = null; }
+      v.srcObject = null;
+      $("srcCard").classList.remove("hide");
+    }
+    mode = "yt"; ytId = id;
+    applying = true; try{ v.pause(); }catch(e){}
+    setTimeout(function(){ applying = false; }, 400);
+    v.classList.add("hide");
+    $("ytwrap").classList.remove("hide");
+    say("");
+    loadYT(function(){
+      ytApplying = true;
+      setTimeout(function(){ ytApplying = false; }, 1500);
+      if(ytPlayer && ytReady){
+        ytPlayer.loadVideoById({videoId:id, startSeconds:t || 0});
+        if(!playing){ setTimeout(function(){ try{ ytPlayer.pauseVideo(); }catch(e){} }, 800); }
+      } else {
+        if(ytPlayer){ try{ ytPlayer.destroy(); }catch(e){} ytPlayer = null; }
+        ytReady = false;
+        $("ytwrap").innerHTML = '<div id="ytbox"></div>';
+        ytPlayer = new YT.Player("ytbox", {
+          width:"100%", height:"100%", videoId:id,
+          playerVars:{playsinline:1, rel:0, start:Math.floor(t || 0), autoplay:playing ? 1 : 0},
+          events:{
+            onReady:function(){ ytReady = true; startYtPoll(); },
+            onStateChange:onYtState,
+            onError:function(){ say("Это видео нельзя встроить или оно недоступно. Попробуйте другую ссылку."); }
+          }
+        });
+      }
+      setTimeout(function(){
+        if(mode === "yt" && playing && ytReady && ytPlayer.getPlayerState() !== 1){ say("Нажми play на видео."); }
+      }, 3000);
+    });
+  }
+  function applyYt(p){
+    if(mode !== "yt" || !ytReady || !p || typeof p.t !== "number") return;
+    ytApplying = true;
+    try{
+      if(Math.abs(ytPlayer.getCurrentTime() - p.t) > 1){ ytPlayer.seekTo(p.t, true); }
+      if(p.playing){ ytPlayer.playVideo(); } else { ytPlayer.pauseVideo(); }
+    }catch(e){}
+    ytLast = {t:p.t, at:Date.now(), playing:!!p.playing};
+    setTimeout(function(){ ytApplying = false; }, 1000);
+    if(p.playing){
+      setTimeout(function(){
+        if(mode === "yt" && ytReady && ytPlayer.getPlayerState() !== 1 && ytPlayer.getPlayerState() !== 3){ say("Нажми play на видео."); }
+      }, 2500);
+    }
+  }
+  function leaveYt(notify){
+    if(mode !== "yt") return;
+    mode = "sync";
+    clearInterval(ytTimer);
+    if(ytPlayer){ try{ ytPlayer.destroy(); }catch(e){} ytPlayer = null; }
+    ytReady = false;
+    $("ytwrap").innerHTML = "";
+    $("ytwrap").classList.add("hide");
+    v.classList.remove("hide");
+    if(notify) send("ytoff", {from:myId});
+    say("Режим YouTube выключен.");
+  }
+  $("ytBtn").addEventListener("click", function(){
+    var id = ytParse($("ytIn").value);
+    if(!id){ say("Не похоже на ссылку YouTube."); return; }
+    if(!subscribed){ say("Нет связи с комнатой."); return; }
+    send("yt", {id:id, t:0, playing:true, from:myId});
+    enterYt(id, 0, true);
+    $("ytIn").value = "";
+  });
+
   function setPeers(n){
     $("dot").className = "dot" + (n > 1 ? " on" : "");
     $("peersText").textContent = n > 1 ? "Вы вместе в комнате" : "Ждём второго…";
@@ -252,13 +370,18 @@ var SUPABASE_KEY = "sb_publishable_HGES6X4jf-AKmT8vhlAxnA_mKd_gthb";
     });
     ch.on("presence", {event:"sync"}, function(){ setPeers(Object.keys(ch.presenceState()).length); });
     ch.on("presence", {event:"join"}, function(){
-      if(mode === "broadcast"){ send("bcast", {on:true, from:myId}); } else { sendState(); }
+      if(mode === "broadcast"){ send("bcast", {on:true, from:myId}); }
+      else if(mode === "yt" && ytReady){ send("yt", {id:ytId, t:ytPlayer.getCurrentTime(), playing:ytPlayer.getPlayerState() === 1, from:myId}); }
+      else { sendState(); }
     });
     ch.on("broadcast", {event:"bcast"}, function(m){ onBcast(m.payload); });
     ch.on("broadcast", {event:"want"}, function(m){ if(mode === "broadcast" && m.payload) makeOffer(m.payload.id); });
     ch.on("broadcast", {event:"offer"}, function(m){ onOffer(m.payload); });
     ch.on("broadcast", {event:"answer"}, function(m){ onAnswer(m.payload); });
     ch.on("broadcast", {event:"ice"}, function(m){ onIce(m.payload); });
+    ch.on("broadcast", {event:"yt"}, function(m){ var p = m.payload; if(p && p.from !== myId && typeof p.id === "string") enterYt(p.id, p.t, p.playing); });
+    ch.on("broadcast", {event:"ytstate"}, function(m){ applyYt(m.payload); });
+    ch.on("broadcast", {event:"ytoff"}, function(){ leaveYt(false); });
 
     $("joinStatus").textContent = "Входим…";
     $("joinView").classList.add("hide");
@@ -298,7 +421,7 @@ var SUPABASE_KEY = "sb_publishable_HGES6X4jf-AKmT8vhlAxnA_mKd_gthb";
     $("joinBtn").click();
     setTimeout(function(){ say("Комната создана. Нажмите «Позвать» и отправьте ссылку."); }, 1500);
   });
-  if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(function(){}); }
+    if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(function(){}); }
   var h = location.hash.replace("#", "");
   if(h){ $("code").value = h; $("joinBtn").click(); }
 })();
